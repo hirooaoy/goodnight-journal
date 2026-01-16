@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Users collection - each user has their own document
+    match /users/{userId} {
+      // Users can only read/write their own user document
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Journal entries subcollection
+      match /entries/{entryId} {
+        // Users can only access their own journal entries
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        
+        // Ensure the userId in the document matches the authenticated user
+        allow create: if request.auth != null 
+                      && request.auth.uid == userId
+                      && request.resource.data.userId == userId;
+        
+        allow update: if request.auth != null 
+                      && request.auth.uid == userId
+                      && resource.data.userId == userId
+                      && request.resource.data.userId == userId;
+      }
+    }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
