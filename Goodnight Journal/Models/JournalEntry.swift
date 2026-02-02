@@ -18,6 +18,8 @@ final class JournalEntry {
     var journalContent: String
     var lastModified: Date
     var userId: String
+    var isCompleted: Bool
+    var needsSync: Bool
     
     init(id: String = UUID().uuidString,
          date: Date = Date(),
@@ -25,7 +27,9 @@ final class JournalEntry {
          letters: [String] = [],
          journalContent: String = "",
          lastModified: Date = Date(),
-         userId: String = "") {
+         userId: String = "",
+         isCompleted: Bool = false,
+         needsSync: Bool = false) {
         self.id = id
         self.date = date
         self.poemContent = poemContent
@@ -33,6 +37,8 @@ final class JournalEntry {
         self.journalContent = journalContent
         self.lastModified = lastModified
         self.userId = userId
+        self.isCompleted = isCompleted
+        self.needsSync = needsSync
     }
     
     // Helper to get date string for Firestore key (YYYY-MM-DD)
@@ -51,7 +57,9 @@ final class JournalEntry {
             "letters": letters,
             "journalContent": journalContent,
             "lastModified": Timestamp(date: lastModified),
-            "userId": userId
+            "userId": userId,
+            "isCompleted": isCompleted,
+            "needsSync": needsSync
         ]
     }
     
@@ -67,6 +75,9 @@ final class JournalEntry {
             return nil
         }
         
+        let isCompleted = dict["isCompleted"] as? Bool ?? false
+        let needsSync = dict["needsSync"] as? Bool ?? false
+        
         return JournalEntry(
             id: id,
             date: dateTimestamp.dateValue(),
@@ -74,7 +85,9 @@ final class JournalEntry {
             letters: letters,
             journalContent: journalContent,
             lastModified: lastModifiedTimestamp.dateValue(),
-            userId: userId
+            userId: userId,
+            isCompleted: isCompleted,
+            needsSync: needsSync
         )
     }
 }

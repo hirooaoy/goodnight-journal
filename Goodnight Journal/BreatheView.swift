@@ -13,22 +13,65 @@ struct BreatheView: View {
     let onBack: () -> Void
     let onSkip: () -> Void
     
+    // MARK: - Configuration
+    private enum Config {
+        static let totalCycles = 4
+        static let initialDelay = 0.5
+        static let textFadeInDuration = 1.5
+        static let textFadeDelay = 0.5
+        static let inhaleNormal = 5.0
+        static let exhaleNormal = 6.0
+        static let inhaleLastCycle = 6.0
+        static let exhaleLastCycle = 7.0
+        static let encouragementFadeDuration = 0.6
+        static let completionDelay = 2.0
+        static let completionFadeOut = 0.5
+    }
+    
+    private enum BreathPhase {
+        case initial
+        case inhale
+        case exhale
+        case complete
+    }
+    
+    // MARK: - State
+    @State private var currentPhase: BreathPhase = .initial
+    @State private var currentCycle: Int = 0
     @State private var circleScale: CGFloat = 1.0
     @State private var circleOpacity: Double = 0.6
     @State private var phaseText: String = "Breathe in"
-    @State private var phaseTextOpacity: Double = 1.0
     @State private var encouragementText: String = ""
     @State private var showEncouragement: Bool = false
     @State private var showText: Bool = false
-    @State private var currentCycle: Int = 0
-    private let totalCycles: Int = 4
-    @StateObject private var soundManager = SoundManager.shared
+    @State private var sessionTimer: Timer?
+    @State private var viewID: UUID = UUID()
     
+    // MARK: - Body
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 0) {
+                // Navigation buttons
+                HStack {
+                    Button(action: handleBack) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .padding(20)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: handleSkip) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .padding(20)
+                    }
+                }
+                
                 Spacer()
                 
                 // Breathing circle with matched geometry
@@ -39,175 +82,178 @@ struct BreatheView: View {
                     .opacity(circleOpacity)
                     .matchedGeometryEffect(id: "breatheCircle", in: namespace)
                 
-                // Phase text - positioned lower to avoid overlap
+                // Phase text
                 VStack(spacing: 8) {
                     Text(phaseText)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
-                        .opacity(phaseTextOpacity)
                     
-                    // Always reserve space for encouragement text
                     Text(encouragementText)
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.7))
                         .opacity(showEncouragement ? 1 : 0)
+                        .frame(height: 20)
                 }
                 .padding(.top, 100)
                 .opacity(showText ? 1 : 0)
-                .frame(minHeight: 44)
                 
                 Spacer()
             }
-            
-            // Back button - top left, Skip button - top right
-            VStack {
-                HStack {
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.5)) {
-                            onBack()
-                        }
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white)
-                            .padding(20)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        onSkip()
-                    }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white)
-                            .padding(20)
-                    }
-                }
-                Spacer()
-            }
         }
-        .onAppear {
-            // Keep screen awake during breathing session
-            UIApplication.shared.isIdleTimerDisabled = true
-            // Start the fireplace sound
-            soundManager.startBreathingSound()
-            startBreathingCycle()
-        }
-        .onDisappear {
-            // Re-enable screen auto-lock when leaving
-            UIApplication.shared.isIdleTimerDisabled = false
-            // Stop the fireplace sound
-            soundManager.stopBreathingSound()
-        }
+        .id(viewID)
+        .onAppear(perform: startSession)
+        .onDisappear(perform: endSession)
     }
     
-    private func startBreathingCycle() {
-        // Brief pause - circle sits alone for 0.5 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            // Fade in "Breathe in" text slowly
-            withAnimation(.easeInOut(duration: 1.5)) {
+    // MARK: - Session Management
+    private func startSession() {
+        resetState()
+        UIApplication.shared.isIdleTimerDisabled = true
+        
+        // Initial delay
+        scheduleNextPhase(after: Config.initialDelay) {
+            withAnimation(.easeInOut(duration: Config.textFadeInDuration)) {
                 showText = true
             }
-            
-            // Start the breathing animation while text is still fading (0.5s after text starts)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                performBreathingCycles()
+            scheduleNextPhase(after: Config.textFadeDelay) {
+                startInhale()
             }
         }
     }
     
-    private func performBreathingCycles() {
-        guard currentCycle < totalCycles else {
-            // Breathing complete
+    private func endSession() {
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+    
+    private func handleBack() {
+        sessionTimer?.invalidate()
+        withAnimation(.easeInOut(duration: 0.5)) {
+            onBack()
+        }
+    }
+    
+    private func handleSkip() {
+        sessionTimer?.invalidate()
+        onSkip()
+    }
+    
+    // MARK: - Breathing Cycles
+    private func startInhale() {
+        guard currentCycle < Config.totalCycles else {
             completeSession()
             return
         }
         
-        // Determine if this is the last cycle
-        let isLastCycle = (currentCycle == 3)
-        let inhaleDuration: Double = isLastCycle ? 6.0 : 5.0
-        let exhaleDuration: Double = isLastCycle ? 7.0 : 6.0
+        currentPhase = .inhale
+        phaseText = "Breathe in"
         
-        // Fade out current text instantly
-        withAnimation(.easeOut(duration: 0.2)) {
-            phaseTextOpacity = 0.0
-        }
+        // Update encouragement text
+        updateEncouragementForInhale()
         
-        // Change text and fade in
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            phaseText = "Breathe in"
-            
-            // Add encouragement on 2nd cycle (index 1) and last cycle (index 3)
-            if currentCycle == 1 {
-                encouragementText = "3 more to go"
-                showEncouragement = true
-            } else if currentCycle == 3 {
-                encouragementText = "Last big one"
-                showEncouragement = true
-            } else {
-                showEncouragement = false
-            }
-            
-            withAnimation(.easeIn(duration: 0.2)) {
-                phaseTextOpacity = 1.0
-            }
-        }
-        
-        withAnimation(.easeInOut(duration: inhaleDuration)) {
+        // Animate circle
+        let duration = isLastCycle ? Config.inhaleLastCycle : Config.inhaleNormal
+        withAnimation(.easeInOut(duration: duration)) {
             circleScale = 6.0
             circleOpacity = 1.0
         }
         
-        // Exhale phase
-        DispatchQueue.main.asyncAfter(deadline: .now() + inhaleDuration) {
-            // Fade out current text
-            withAnimation(.easeOut(duration: 0.2)) {
-                phaseTextOpacity = 0.0
-            }
-            
-            // Change text and fade in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                phaseText = "Breathe out"
-                
-                // Add encouragement on 2nd cycle
-                if currentCycle == 1 {
-                    encouragementText = "You're doing great"
-                    showEncouragement = true
-                } else {
-                    showEncouragement = false
-                }
-                
-                withAnimation(.easeIn(duration: 0.2)) {
-                    phaseTextOpacity = 1.0
-                }
-            }
-            
-            withAnimation(.easeInOut(duration: exhaleDuration)) {
-                circleScale = 1.0
-                circleOpacity = 0.6
-            }
-            
-            // Move to next cycle
-            DispatchQueue.main.asyncAfter(deadline: .now() + exhaleDuration) {
-                currentCycle += 1
-                performBreathingCycles()
-            }
+        // Schedule exhale
+        scheduleNextPhase(after: duration) {
+            startExhale()
+        }
+    }
+    
+    private func startExhale() {
+        currentPhase = .exhale
+        phaseText = "Breathe out"
+        
+        // Update encouragement text
+        updateEncouragementForExhale()
+        
+        // Animate circle
+        let duration = isLastCycle ? Config.exhaleLastCycle : Config.exhaleNormal
+        withAnimation(.easeInOut(duration: duration)) {
+            circleScale = 1.0
+            circleOpacity = 0.6
+        }
+        
+        // Schedule next cycle
+        scheduleNextPhase(after: duration) {
+            currentCycle += 1
+            startInhale()
         }
     }
     
     private func completeSession() {
+        currentPhase = .complete
         phaseText = "Well done"
         
-        // Return to home after a brief pause
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.5)) {
+        scheduleNextPhase(after: Config.completionDelay) {
+            withAnimation(.easeInOut(duration: Config.completionFadeOut)) {
                 showText = false
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            scheduleNextPhase(after: Config.completionFadeOut) {
                 onComplete()
             }
         }
+    }
+    
+    // MARK: - Helpers
+    private var isLastCycle: Bool {
+        currentCycle == Config.totalCycles - 1
+    }
+    
+    private func updateEncouragementForInhale() {
+        switch currentCycle {
+        case 1:
+            encouragementText = "3 more to go"
+            withAnimation(.easeInOut(duration: Config.encouragementFadeDuration)) {
+                showEncouragement = true
+            }
+        case 3:
+            encouragementText = "Last big one"
+            withAnimation(.easeInOut(duration: Config.encouragementFadeDuration)) {
+                showEncouragement = true
+            }
+        default:
+            break
+        }
+    }
+    
+    private func updateEncouragementForExhale() {
+        switch currentCycle {
+        case 1:
+            encouragementText = "You're doing great"
+        case 2, 3:
+            withAnimation(.easeInOut(duration: Config.encouragementFadeDuration)) {
+                showEncouragement = false
+            }
+        default:
+            break
+        }
+    }
+    
+    private func scheduleNextPhase(after delay: TimeInterval, action: @escaping () -> Void) {
+        sessionTimer?.invalidate()
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+            action()
+        }
+    }
+    
+    private func resetState() {
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        currentPhase = .initial
+        currentCycle = 0
+        circleScale = 1.0
+        circleOpacity = 0.6
+        phaseText = "Breathe in"
+        encouragementText = ""
+        showEncouragement = false
+        showText = false
+        viewID = UUID()
     }
 }
 

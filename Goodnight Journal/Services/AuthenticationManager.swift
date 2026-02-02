@@ -18,7 +18,6 @@ import UIKit
 class AuthenticationManager: ObservableObject {
     @Published var user: User?
     @Published var isAuthenticated = false
-    @Published var isLoading = true
     @Published var errorMessage: String?
     
     static let shared = AuthenticationManager()
@@ -30,7 +29,6 @@ class AuthenticationManager: ObservableObject {
         // Check if user is already signed in
         self.user = Auth.auth().currentUser
         self.isAuthenticated = user != nil
-        self.isLoading = false
         
         // Listen for auth state changes
         authStateListener = Auth.auth().addStateDidChangeListener { [weak self] _, user in

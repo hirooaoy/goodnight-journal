@@ -70,19 +70,28 @@ struct AuthenticationView: View {
                         },
                         onCompletion: { result in
                             Task {
-                                isLoading = true
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    isLoading = true
+                                }
                                 switch result {
                                 case .success(let authorization):
                                     do {
                                         try await authManager.signInWithApple(authorization: authorization)
+                                        // Let the main app animation handle the transition
+                                        isLoading = false
                                     } catch {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            isLoading = false
+                                        }
                                         showError = true
                                     }
                                 case .failure(let error):
                                     print("Sign in with Apple failed: \(error)")
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        isLoading = false
+                                    }
                                     showError = true
                                 }
-                                isLoading = false
                             }
                         }
                     )
@@ -93,13 +102,19 @@ struct AuthenticationView: View {
                     // Google Sign In Button
                     Button(action: {
                         Task {
-                            isLoading = true
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                isLoading = true
+                            }
                             do {
                                 try await authManager.signInWithGoogle()
+                                // Let the main app animation handle the transition
+                                isLoading = false
                             } catch {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    isLoading = false
+                                }
                                 showError = true
                             }
-                            isLoading = false
                         }
                     }) {
                         HStack(spacing: 10) {
@@ -128,18 +143,20 @@ struct AuthenticationView: View {
             
             // Loading overlay
             if isLoading {
-                Color.black.opacity(0.5)
+                Color.black.opacity(0.3)
                     .ignoresSafeArea()
+                    .transition(.opacity)
                 
                 ProgressView()
                     .tint(.white)
-                    .scaleEffect(1.5)
+                    .scaleEffect(1.2)
+                    .transition(.opacity)
             }
         }
-        .alert("Sign in error", isPresented: $showError) {
+        .alert("Sign in failed", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(authManager.errorMessage ?? "An error occurred during sign in. Please try again.")
+            Text("Please check your connection and try again.")
         }
     }
     
